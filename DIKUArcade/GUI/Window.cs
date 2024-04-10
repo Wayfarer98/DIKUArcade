@@ -58,6 +58,7 @@ namespace DIKUArcade.GUI {
         public static void CreateOpenGLContext() {
             var settings = new GameWindowSettings();
             var nativeSettings = new NativeWindowSettings();
+            nativeSettings.Flags = ContextFlags.ForwardCompatible;
             Window._contextWin = new GameWindow(settings, nativeSettings);
             Window._contextWin.Context.MakeCurrent();
         }
@@ -66,38 +67,32 @@ namespace DIKUArcade.GUI {
 
 
         private void ActivateThisWindowContext(string title, uint width, uint height, bool fullscreen) {
-            // We use OpenGL 2.0 (ie. fixed-function pipeline!)
-            var settings = new GameWindowSettings();
-            settings.IsMultiThreaded = false;
-            var nativeSettings = new NativeWindowSettings();
-            nativeSettings.Profile = ContextProfile.Any;
-            nativeSettings.WindowState = WindowState.Normal;
-            nativeSettings.API = ContextAPI.OpenGL;
-            nativeSettings.APIVersion = new Version(2, 0);
-            nativeSettings.IsFullscreen = fullscreen;
-
-            window = new GameWindow(settings, nativeSettings) {
+            var nativeSettings = new NativeWindowSettings() {
+                Size = new OpenTK.Mathematics.Vector2i((int)width, (int)height),
+                Flags = ContextFlags.ForwardCompatible,
                 Title = title,
-                Size = new OpenTK.Mathematics.Vector2i((int)width, (int)height)
+                IsFullscreen = fullscreen
+            };
+            var gameWindowSettings = new GameWindowSettings() {
+                IsMultiThreaded = false
             };
 
-            GL.ClearDepth(1);
-            GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            isRunning = true;
+            window = new GameWindow(gameWindowSettings, nativeSettings);
 
             isRunning = true;
             window.Context.MakeCurrent();
             window.IsVisible = true;
 
             GL.Viewport(0, 0, window.Size.X, window.Size.Y);
-            GL.MatrixMode(MatrixMode.Projection);
-            GL.LoadIdentity();
-            GL.Ortho(0.0,1.0,0.0,1.0, 0.0, 4.0);
+            GL.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
         }
 
 
         public Window(WindowArgs windowArgs) {
             // keyboard layout
-            switch(windowArgs.KeyboardLayout) {
+            switch (windowArgs.KeyboardLayout) {
                 case KeyboardLayout.Danish:
                     keyTransformer = new Input.Languages.DanishKeyTransformer();
                     break;
@@ -145,15 +140,12 @@ namespace DIKUArcade.GUI {
         #region WINDOW_RESIZE
 
         private void DefaultResizeHandler(ResizeEventArgs args) {
-            if (!Resizable) { 
-                return; 
+            if (!Resizable) {
+                return;
             }
 
             // GL.Viewport(0, 0, window.Size.X, window.Size.Y);
             GL.Viewport(0, 0, args.Size.X, args.Size.Y); // TODO: Is that right?
-            GL.MatrixMode(MatrixMode.Projection);
-            GL.LoadIdentity();
-            GL.Ortho(0.0, 1.0, 0.0, 1.0, 0.0, 4.0);
         }
 
         private void AddDefaultResizeHandler() {
@@ -168,10 +160,10 @@ namespace DIKUArcade.GUI {
 
         #region KEY_EVENT_HANDLERS
 
-        
+
 
         private void DefaultKeyEventHandler(KeyboardKeyEventArgs args) {
-            switch(args.Key) {
+            switch (args.Key) {
                 case OpenTK.Windowing.GraphicsLibraryFramework.Keys.Escape:
                     CloseWindow();
                     break;
@@ -195,7 +187,7 @@ namespace DIKUArcade.GUI {
         /// Attach the specified keyHandler method argument to this window object.
         /// All key inputs will thereafter be directed to this keyHandler.
         /// </summary>
-        public void SetKeyEventHandler(Action<KeyboardAction,KeyboardKey> keyHandler) {
+        public void SetKeyEventHandler(Action<KeyboardAction, KeyboardKey> keyHandler) {
             RemoveDefaultKeyEventHandler();
             window.KeyDown += args => {
                 if (!args.IsRepeat) keyHandler(KeyboardAction.KeyPress, keyTransformer.TransformKey(args.Key));

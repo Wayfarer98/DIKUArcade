@@ -6,6 +6,7 @@ using OpenTK.Graphics.OpenGL;
 using DIKUArcade.Entities;
 using DIKUArcade.Math;
 using OpenTK.Mathematics;
+using DIKUArcade.Shaders;
 
 namespace DIKUArcade.Graphics {
     public class Text {
@@ -14,6 +15,16 @@ namespace DIKUArcade.Graphics {
         /// OpenGL texture handle
         /// </summary>
         private int textureId;
+        private float[] _vertices;
+        private readonly uint[] _indices = {
+            0, 1, 3,
+            1, 2, 3
+        };
+        private int _elementBufferObject;
+        private int _vertexBufferObject;
+        private int _vertexArrayObject;
+        private Matrix4 _view;
+        private Shader _shader;
 
         /// <summary>
         /// The string value for the text
@@ -61,12 +72,10 @@ namespace DIKUArcade.Graphics {
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             GL.Enable(EnableCap.DepthTest);
-            GL.DepthFunc(DepthFunction.Lequal);
+            GL.DepthFunc(DepthFunction.Always);
 
             GL.Enable(EnableCap.Texture2D);
             GL.Enable(EnableCap.AlphaTest);
-
-            GL.AlphaFunc(AlphaFunction.Gequal, 0.5f);
 
             // unbind this new texture
             UnbindTexture();
@@ -85,8 +94,7 @@ namespace DIKUArcade.Graphics {
             GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, textBmp.Width, textBmp.Height, 0,
                 OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, IntPtr.Zero);
 
-            using (System.Drawing.Graphics gfx = System.Drawing.Graphics.FromImage(textBmp))
-            {
+            using (System.Drawing.Graphics gfx = System.Drawing.Graphics.FromImage(textBmp)) {
                 gfx.Clear(System.Drawing.Color.Transparent);
                 // TODO: Could create an enumeration for choosing btw different font families!
                 Font drawFont = font;
@@ -139,7 +147,7 @@ namespace DIKUArcade.Graphics {
         public void SetFontSize(int newSize) {
             if (newSize < 0) {
                 // ReSharper disable once NotResolvedInText
-                throw  new ArgumentOutOfRangeException("Font size must be a positive integer");
+                throw new ArgumentOutOfRangeException("Font size must be a positive integer");
             }
             fontSize = newSize;
             CreateBitmapTexture();
@@ -263,38 +271,66 @@ namespace DIKUArcade.Graphics {
             var halfX = shape.Extent.X / 2.0f;
             var halfY = shape.Extent.Y / 2.0f;
 
-            return Matrix4.CreateTranslation(-halfX, -halfY, 0.0f) *
+            return Matrix4.CreateTranslation(-shape.Position.X - halfX, -shape.Position.Y - halfY, 0.0f) *
+                    Matrix4.CreateRotationX(MathHelper.DegreesToRadians(180.0f)) *
                    Matrix4.CreateRotationZ(shape.Rotation) *
-                   Matrix4.CreateTranslation(shape.Position.X + halfX, shape.Position.Y + halfY,
-                       0.0f);
+                   Matrix4.CreateTranslation(halfX + shape.Position.X, halfY + shape.Position.Y, 0.0f) *
+                    Matrix4.CreateScale(2.0f) *
+                    Matrix4.CreateTranslation(-1.0f, -1.0f, 0.0f);
         }
-        
+
         public void ScaleText(float scale) {
             shape.Position *= scale;
             shape.Scale(scale);
         }
-        
+
         public void RenderText() {
             // bind this texture
             BindTexture();
 
-            // render this texture
-            Matrix4 modelViewMatrix = CreateMatrix();
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.LoadMatrix(ref modelViewMatrix);
+            SetupVertexBuffer();
 
-            GL.Color4(1f,1f,1f,1f);
-            GL.Begin(PrimitiveType.Quads);
+            _view = CreateMatrix();
 
-            GL.TexCoord2(0, 1); GL.Vertex2(0.0f, 0.0f);                      // Top Left
-            GL.TexCoord2(0, 0); GL.Vertex2(0.0f, shape.Extent.Y);            // Bottom Left
-            GL.TexCoord2(1, 0); GL.Vertex2(shape.Extent.X, shape.Extent.Y);  // Bottom Right
-            GL.TexCoord2(1, 1); GL.Vertex2(shape.Extent.X, 0.0f);            // Top Right
+            _shader.SetMatrix4("view", _view);
 
-            GL.End();
+            GL.DrawElements(PrimitiveType.Triangles, _indices.Length, DrawElementsType.UnsignedInt, 0);
 
             // unbind this texture
             UnbindTexture();
+        }
+        private void SetupVertexBuffer() {
+            _vertices = new float[]
+            {
+                shape.Position.X + shape.Extent.X, shape.Position.Y + shape.Extent.Y, 0.0f, 1.0f, 1.0f, // top right
+                shape.Position.X + shape.Extent.X, shape.Position.Y, 0.0f, 1.0f, 0.0f,                  // bottom right
+                shape.Position.X, shape.Position.Y, 0.0f, 0.0f, 0.0f,                                   // bottom left
+                shape.Position.X, shape.Position.Y + shape.Extent.Y, 0.0f, 0.0f, 1.0f                   // top left
+            };
+
+            _vertexArrayObject = GL.GenVertexArray();
+            GL.BindVertexArray(_vertexArrayObject);
+
+            _vertexBufferObject = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBufferObject);
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertices.Length * sizeof(float), _vertices,
+                BufferUsageHint.StaticDraw);
+
+            _elementBufferObject = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _elementBufferObject);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indices.Length * sizeof(uint), _indices,
+                BufferUsageHint.StaticDraw);
+
+            _shader = new Shader("DIKUArcade/Shaders/shader.vert", "DIKUArcade/Shaders/shader.frag");
+            _shader.Use();
+
+            var vertexLocation = _shader.GetAttribLocation("aPosition");
+            GL.EnableVertexAttribArray(vertexLocation);
+            GL.VertexAttribPointer(vertexLocation, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
+
+            var texCoordLocation = _shader.GetAttribLocation("aTexCoord");
+            GL.EnableVertexAttribArray(texCoordLocation);
+            GL.VertexAttribPointer(texCoordLocation, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
         }
     }
 }

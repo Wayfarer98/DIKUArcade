@@ -24,8 +24,8 @@ public class Game : DIKUGame {
     }
 
     public void MovePlayer(Vec2F dir) {
-        ((DynamicShape) player.Shape).Direction = dir;
-        var collide = CollisionDetection.Aabb((DynamicShape) player.Shape, wall.Shape);
+        ((DynamicShape)player.Shape).Direction = dir;
+        var collide = CollisionDetection.Aabb((DynamicShape)player.Shape, wall.Shape);
         if (collide.Collision) {
             Console.WriteLine($"CollisionDetection occured in direction {collide.CollisionDir}");
             dir *= collide.DirectionFactor;
@@ -57,7 +57,7 @@ public class Game : DIKUGame {
         }
     }
 
-    public override void Render() { 
+    public override void Render() {
         player.RenderEntity();
         wall.RenderEntity();
     }

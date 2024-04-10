@@ -4,6 +4,8 @@ using System.IO;
 using OpenTK.Mathematics;
 using OpenTK.Graphics.OpenGL;
 using DIKUArcade.Entities;
+using DIKUArcade.Shaders;
+using System.Drawing;
 
 namespace DIKUArcade.Graphics {
     public class Texture {
@@ -13,6 +15,16 @@ namespace DIKUArcade.Graphics {
         public static double offsetX = 0.0;
         public static double offsetY = 0.0;
         private int textureId;
+        private float[] _vertices;
+        private readonly uint[] _indices = {
+            0, 1, 3,
+            1, 2, 3
+        };
+        private int _elementBufferObject;
+        private int _vertexBufferObject;
+        private int _vertexArrayObject;
+        private Matrix4 _view;
+        private Shader _shader;
 
         public Texture(string filename) {
             // create a texture id
@@ -25,16 +37,14 @@ namespace DIKUArcade.Graphics {
             var dir = new DirectoryInfo(Path.GetDirectoryName(
                 System.Reflection.Assembly.GetExecutingAssembly().Location));
 
-            while (dir.Name != "bin")
-            {
+            while (dir.Name != "bin") {
                 dir = dir.Parent;
             }
             dir = dir.Parent;
 
             // load image file
             var path = Path.Combine(dir.FullName.ToString(), filename);
-            if (!File.Exists(path))
-            {
+            if (!File.Exists(path)) {
                 throw new FileNotFoundException($"Error: The file \"{path}\" does not exist.");
             }
             System.Drawing.Bitmap image = new System.Drawing.Bitmap(path);
@@ -57,21 +67,19 @@ namespace DIKUArcade.Graphics {
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             GL.Enable(EnableCap.DepthTest);
-            GL.DepthFunc(DepthFunction.Lequal);
+            GL.DepthFunc(DepthFunction.Always);
 
             GL.Enable(EnableCap.Texture2D);
             GL.Enable(EnableCap.AlphaTest);
 
-            GL.AlphaFunc(AlphaFunction.Gequal, 0.5f);
+            //GL.AlphaFunc(AlphaFunction.Gequal, 0.5f);
 
             // unbind the texture
             UnbindTexture();
         }
 
-        public Texture(string filename, int currentStride, int stridesInImage)
-        {
-            if (currentStride < 0 || currentStride >= stridesInImage || stridesInImage < 0)
-            {
+        public Texture(string filename, int currentStride, int stridesInImage) {
+            if (currentStride < 0 || currentStride >= stridesInImage || stridesInImage < 0) {
                 throw new ArgumentOutOfRangeException(
                     $"Invalid stride numbers: ({currentStride}/{stridesInImage})");
             }
@@ -85,16 +93,14 @@ namespace DIKUArcade.Graphics {
             var dir = new DirectoryInfo(Path.GetDirectoryName(
                 System.Reflection.Assembly.GetExecutingAssembly().Location));
 
-            while (dir.Name != "bin")
-            {
+            while (dir.Name != "bin") {
                 dir = dir.Parent;
             }
             dir = dir.Parent;
 
             // load image file
             var path = Path.Combine(dir.FullName.ToString(), filename);
-            if (!File.Exists(path))
-            {
+            if (!File.Exists(path)) {
                 throw new FileNotFoundException($"Error: The file \"{path}\" does not exist.");
             }
             System.Drawing.Bitmap image = new System.Drawing.Bitmap(path);
@@ -124,38 +130,36 @@ namespace DIKUArcade.Graphics {
             GL.Enable(EnableCap.Texture2D);
             GL.Enable(EnableCap.AlphaTest);
 
-            GL.AlphaFunc(AlphaFunction.Gequal, 0.5f);
+            // GL.AlphaFunc(AlphaFunction.Gequal, 0.5f);
 
             // unbind the texture
             UnbindTexture();
         }
 
-        private void BindTexture()
-        {
+        private void BindTexture() {
             GL.BindTexture(TextureTarget.Texture2D, textureId);
         }
 
-        private void UnbindTexture()
-        {
+        private void UnbindTexture() {
             GL.BindTexture(TextureTarget.Texture2D, 0); // 0 is invalid texture id
         }
 
-        private Matrix4 CreateMatrix(Shape shape)
-        {
+        private Matrix4 CreateMatrix(Shape shape) {
             // ensure that rotation is performed around the center of the shape
             // instead of the bottom-left corner
             var halfX = shape.Extent.X / 2.0f;
             var halfY = shape.Extent.Y / 2.0f;
 
-            return Matrix4.CreateTranslation(-halfX, -halfY, 0.0f) *
+            return Matrix4.CreateTranslation(-shape.Position.X - halfX, -shape.Position.Y - halfY, 0.0f) *
+                    Matrix4.CreateRotationX(MathHelper.DegreesToRadians(180.0f)) * // For some reason the texture is upside down
                    Matrix4.CreateRotationZ(shape.Rotation) *
-                   Matrix4.CreateTranslation(shape.Position.X + halfX, shape.Position.Y + halfY,
-                       0.0f);
+                   Matrix4.CreateTranslation(halfX + shape.Position.X, halfY + shape.Position.Y, 0.0f) *
+                    Matrix4.CreateScale(2.0f) *
+                    Matrix4.CreateTranslation(-1.0f, -1.0f, 0.0f);
         }
-        
+
         // Render things that are affected by a camera (if the game has one)
-        private Matrix4 CreateMatrix(Shape shape, Camera camera)
-        {
+        private Matrix4 CreateMatrix(Shape shape, Camera camera) {
             // ensure that rotation is performed around the center of the shape
             // instead of the bottom-left corner
             var halfX = shape.Extent.X / 2.0f;
@@ -171,8 +175,7 @@ namespace DIKUArcade.Graphics {
                        0.0f);
         }
 
-        public void Render(Shape shape, Camera camera)
-        {
+        public void Render(Shape shape, Camera camera) {
 
             // bind this texture
             BindTexture();
@@ -197,30 +200,56 @@ namespace DIKUArcade.Graphics {
             // unbind this texture
             UnbindTexture();
         }
-        
-        public void Render(Shape shape)
-        {
+
+        public void Render(Shape shape) {
 
             // bind this texture
             BindTexture();
 
-            // render this texture
-            Matrix4 modelViewMatrix = CreateMatrix(shape);
-            GL.MatrixMode(MatrixMode.Modelview);
-            GL.LoadMatrix(ref modelViewMatrix);
+            SetupVertexBuffer(shape);
 
-            GL.Color4(1f, 1f, 1f, 1f);
-            GL.Begin(PrimitiveType.Quads);
+            _view = CreateMatrix(shape);
 
-            GL.TexCoord2(0, 1); GL.Vertex2(0.0f, 0.0f);                      // Top Left
-            GL.TexCoord2(0, 0); GL.Vertex2(0.0f, shape.Extent.Y);            // Bottom Left
-            GL.TexCoord2(1, 0); GL.Vertex2(shape.Extent.X, shape.Extent.Y);  // Bottom Right
-            GL.TexCoord2(1, 1); GL.Vertex2(shape.Extent.X, 0.0f);            // Top Right
+            _shader.SetMatrix4("view", _view);
 
-            GL.End();
+            GL.DrawElements(PrimitiveType.Triangles, _indices.Length, DrawElementsType.UnsignedInt, 0);
 
             // unbind this texture
             UnbindTexture();
+        }
+
+        private void SetupVertexBuffer(Shape shape) {
+            _vertices = new float[]
+            {
+                shape.Position.X + shape.Extent.X, shape.Position.Y + shape.Extent.Y, 0.0f, 1.0f, 1.0f, // top right
+                shape.Position.X + shape.Extent.X, shape.Position.Y, 0.0f, 1.0f, 0.0f,                  // bottom right
+                shape.Position.X, shape.Position.Y, 0.0f, 0.0f, 0.0f,                                   // bottom left
+                shape.Position.X, shape.Position.Y + shape.Extent.Y, 0.0f, 0.0f, 1.0f                   // top left
+            };
+
+            _vertexArrayObject = GL.GenVertexArray();
+            GL.BindVertexArray(_vertexArrayObject);
+
+            _vertexBufferObject = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBufferObject);
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertices.Length * sizeof(float), _vertices,
+                BufferUsageHint.StaticDraw);
+
+            _elementBufferObject = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _elementBufferObject);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indices.Length * sizeof(uint), _indices,
+                BufferUsageHint.StaticDraw);
+
+            _shader = new Shader("DIKUArcade/Shaders/shader.vert", "DIKUArcade/Shaders/shader.frag");
+            _shader.Use();
+
+            var vertexLocation = _shader.GetAttribLocation("aPosition");
+            GL.EnableVertexAttribArray(vertexLocation);
+            GL.VertexAttribPointer(vertexLocation, 3, VertexAttribPointerType.Float, false, 5 * sizeof(float), 0);
+
+            var texCoordLocation = _shader.GetAttribLocation("aTexCoord");
+            GL.EnableVertexAttribArray(texCoordLocation);
+            GL.VertexAttribPointer(texCoordLocation, 2, VertexAttribPointerType.Float, false, 5 * sizeof(float), 3 * sizeof(float));
         }
     }
 }

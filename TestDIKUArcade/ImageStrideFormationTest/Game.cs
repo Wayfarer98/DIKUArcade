@@ -11,7 +11,7 @@ public class Game : DIKUGame {
     private EntityContainer entities;
     public Game(WindowArgs windowArgs) : base(windowArgs) {
         window.SetKeyEventHandler(KeyHandler);
-        
+
         var img1 = new Image(@"Assets/Taxi.png");
         var img2 = new Image(@"Assets/Taxi2.png");
 
@@ -49,7 +49,7 @@ public class Game : DIKUGame {
         }
     }
 
-    public override void Render() { 
+    public override void Render() {
         entities.RenderEntities();
     }
 
